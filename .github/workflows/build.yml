@@ -71,24 +71,28 @@ jobs:
             echo "::error::PowerlogProbe.dylib links substrate/ellekit/UIKit"
             exit 1
           fi
-          if ! echo "$DEPS" | grep -q 'libsqlite3'; then
-            echo "::error::libsqlite3 missing - snapshots would silently no-op"
-            exit 1
-          fi
-          echo "OK: dependency hygiene"
+          echo "OK: dependency hygiene (no sqlite3 needed in plan A)"
 
-      - name: Verify probe instrumentation is present
+      - name: Verify plan A filter is present
         run: |
           DYLIB=$(find .theos -name 'PowerlogProbe.dylib' -type f -not -path '*.dSYM*' | head -1)
           if [ -z "$DYLIB" ] || [ ! -f "$DYLIB" ]; then
             echo "::error::PowerlogProbe.dylib not found"
             exit 1
           fi
-          if ! strings -a "$DYLIB" | grep -q 'PowerlogProbe 0.9.0 DIAG START'; then
-            echo "::error::diagnostic strings missing from dylib"
-            exit 1
-          fi
-          echo "OK: instrumentation present"
+          STRINGS=$(strings -a "$DYLIB")
+          for NEEDLE in \
+            'PowerlogProbe 1.0.0 PLAN A START' \
+            'PLAccountingOperator_' \
+            'PLApplicationAgent_' \
+            'PASSTHROUGH_ALL' \
+            'writeEntries:withCompletionBlock:'; do
+            if ! echo "$STRINGS" | grep -qF "$NEEDLE"; then
+              echo "::error::plan A string missing from dylib: $NEEDLE"
+              exit 1
+            fi
+          done
+          echo "OK: plan A whitelist + hooks + A-B switch present"
 
       - name: Upload deb
         uses: actions/upload-artifact@v4

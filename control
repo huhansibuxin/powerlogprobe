@@ -1,8 +1,8 @@
 Package: com.huhansibuxin.powerlogprobe
 Name: PowerlogProbe
-Version: 0.9.0
+Version: 1.0.0
 Architecture: iphoneos-arm64
-Description: DIAGNOSTIC ONLY - read-only aggregated/PowerlogCore probe. Dumps loaded images, all PL* ObjC classes and methods, and two 120s-apart CurrentPowerlog.PLSQL table-growth snapshots. Hooks nothing, skips nothing, keeps Settings > Battery per-App usage intact.
+Description: PLAN A - aggregated/PowerlogCore write filter. Whitelists only the entryKeys needed by Settings > Battery per-App usage (energy ledger, application runtime, battery curve) and short-circuits every other write at PLCoreStorage / PLSQLiteConnection. Includes a PASSTHROUGH_ALL flag-file A-B switch and event-count logging.
 Maintainer: huhansibuxin
 Author: huhansibuxin
 Section: Tweaks

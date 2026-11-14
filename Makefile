@@ -13,10 +13,11 @@ PowerlogProbe_FILES = Tweak.xm
 
 # Zero substrate/ellekit LINK dependency. aggregated is a launchd daemon; if it
 # cannot dlopen libellekit, any LC_LOAD_DYLIB referencing it makes our dylib
-# fail to load silently (proven on keybagd, 2026-09-28). We only use %ctor,
-# never %hook / MSHookFunction, so dead-stripping is safe.
-# -lsqlite3 is explicit: the probe opens CurrentPowerlog.PLSQL read-only.
-PowerlogProbe_LDFLAGS = -Wl,-dead_strip_dylibs -lsqlite3
+# fail to load silently (proven on keybagd, 2026-09-28). We only use %ctor plus
+# objc/runtime method_setImplementation, never %hook / MSHookFunction, so
+# dead-stripping is safe. Plan A needs no libsqlite3 anymore - we never open the
+# database, we short-circuit before SQL is issued.
+PowerlogProbe_LDFLAGS = -Wl,-dead_strip_dylibs
 PowerlogProbe_CFLAGS = -Os
 ERROR_ON_WARNINGS = 0
 
