@@ -1,0 +1,83 @@
+name: Build PowerlogProbe
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    strategy:
+      matrix:
+        variant: [rootless, roothide]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # rootless uses upstream theos; roothide REQUIRES the roothide fork,
+      # upstream theos does not know the roothide package scheme.
+      - name: Setup Theos (Rootless)
+        if: matrix.variant == 'rootless'
+        run: |
+          git clone --recurse-submodules https://github.com/theos/theos.git ${{ runner.temp }}/theos
+          find ${{ runner.temp }}/theos/bin -name "*.pl" -exec sed -i '' '1s|#!/usr/bin/perl|#!/usr/bin/env perl|' {} \;
+          echo "THEOS=${{ runner.temp }}/theos" >> $GITHUB_ENV
+          echo "THEOS_PACKAGE_SCHEME=rootless" >> $GITHUB_ENV
+
+      - name: Setup Theos (Roothide)
+        if: matrix.variant == 'roothide'
+        run: |
+          git clone --recurse-submodules https://github.com/roothide/theos.git ${{ runner.temp }}/theos
+          find ${{ runner.temp }}/theos/bin -name "*.pl" -exec sed -i '' '1s|#!/usr/bin/perl|#!/usr/bin/env perl|' {} \;
+          echo "THEOS=${{ runner.temp }}/theos" >> $GITHUB_ENV
+          echo "THEOS_PACKAGE_SCHEME=roothide" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        run: |
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          brew install dpkg ldid
+
+      - name: Install SDK
+        run: |
+          cd ${{ runner.temp }}/theos/sdks
+          curl -sLO https://github.com/theos/sdks/archive/refs/heads/master.zip
+          unzip -q master.zip
+          mv sdks-master/iPhoneOS16.5.sdk .
+          rm -rf sdks-master master.zip
+
+      - name: Build
+        run: make package
+
+      # aggregated is a small launchd daemon. Any substrate/ellekit/UIKit link
+      # dependency means either silent dlopen failure or a heavy framework
+      # dragged into a 20MB-jetsam process. Fail the build instead.
+      - name: Verify dylib dependency hygiene
+        run: |
+          DYLIB=$(find .theos -name 'PowerlogProbe.dylib' -type f | head -1)
+          echo "== $DYLIB =="
+          otool -L "$DYLIB"
+          if otool -L "$DYLIB" | grep -qiE 'substrate|ellekit|UIKit'; then
+            echo "::error::PowerlogProbe.dylib links substrate/ellekit/UIKit"
+            exit 1
+          fi
+          if ! otool -L "$DYLIB" | grep -q 'libsqlite3'; then
+            echo "::error::libsqlite3 missing - snapshots would silently no-op"
+            exit 1
+          fi
+          echo "OK: dependency hygiene"
+
+      - name: Verify probe instrumentation is present
+        run: |
+          DYLIB=$(find .theos -name 'PowerlogProbe.dylib' -type f | head -1)
+          if ! strings -a "$DYLIB" | grep -q 'PowerlogProbe 0.9.0 DIAG START'; then
+            echo "::error::diagnostic strings missing from dylib"
+            exit 1
+          fi
+          echo "OK: instrumentation present"
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: PowerlogProbe-${{ matrix.variant }}
+          path: packages/*.deb
