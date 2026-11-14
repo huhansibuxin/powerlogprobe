@@ -5,3 +5,6 @@ packages/
 *.o
 *.deb
 *.dylib
+
+# local CI watch output
+*.log
