@@ -61,11 +61,17 @@ jobs:
           fi
           echo "== $DYLIB =="
           otool -L "$DYLIB"
-          if otool -L "$DYLIB" | grep -qiE 'substrate|ellekit|UIKit'; then
+          # The first line is the image path. Roothide also emits the dylib's OWN
+          # install name (@loader_path/.jbroot/Library/MobileSubstrate/...); it is
+          # a self reference, not a substrate link - exclude it or the check
+          # false-positives on the "MobileSubstrate" path component.
+          DEPS=$(otool -L "$DYLIB" | tail -n +2 | grep -v '@loader_path' || true)
+          echo "== real dependencies =="; echo "$DEPS"
+          if echo "$DEPS" | grep -qiE 'substrate|ellekit|UIKit'; then
             echo "::error::PowerlogProbe.dylib links substrate/ellekit/UIKit"
             exit 1
           fi
-          if ! otool -L "$DYLIB" | grep -q 'libsqlite3'; then
+          if ! echo "$DEPS" | grep -q 'libsqlite3'; then
             echo "::error::libsqlite3 missing - snapshots would silently no-op"
             exit 1
           fi
