@@ -54,7 +54,11 @@ jobs:
       # dragged into a 20MB-jetsam process. Fail the build instead.
       - name: Verify dylib dependency hygiene
         run: |
-          DYLIB=$(find .theos -name 'PowerlogProbe.dylib' -type f | head -1)
+          DYLIB=$(find .theos -name 'PowerlogProbe.dylib' -type f -not -path '*.dSYM*' | head -1)
+          if [ -z "$DYLIB" ] || [ ! -f "$DYLIB" ]; then
+            echo "::error::PowerlogProbe.dylib not found"
+            exit 1
+          fi
           echo "== $DYLIB =="
           otool -L "$DYLIB"
           if otool -L "$DYLIB" | grep -qiE 'substrate|ellekit|UIKit'; then
@@ -69,7 +73,11 @@ jobs:
 
       - name: Verify probe instrumentation is present
         run: |
-          DYLIB=$(find .theos -name 'PowerlogProbe.dylib' -type f | head -1)
+          DYLIB=$(find .theos -name 'PowerlogProbe.dylib' -type f -not -path '*.dSYM*' | head -1)
+          if [ -z "$DYLIB" ] || [ ! -f "$DYLIB" ]; then
+            echo "::error::PowerlogProbe.dylib not found"
+            exit 1
+          fi
           if ! strings -a "$DYLIB" | grep -q 'PowerlogProbe 0.9.0 DIAG START'; then
             echo "::error::diagnostic strings missing from dylib"
             exit 1
