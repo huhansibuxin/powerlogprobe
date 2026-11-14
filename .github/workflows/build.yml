@@ -71,9 +71,9 @@ jobs:
             echo "::error::PowerlogProbe.dylib links substrate/ellekit/UIKit"
             exit 1
           fi
-          echo "OK: dependency hygiene (no sqlite3 needed in plan C3)"
+          echo "OK: dependency hygiene (RELEASE links no Foundation/UIKit/substrate)"
 
-      - name: Verify plan C3 build is present
+      - name: Verify RELEASE build (fixed C3 policy, zero logging)
         run: |
           DYLIB=$(find .theos -name 'PowerlogProbe.dylib' -type f -not -path '*.dSYM*' | head -1)
           if [ -z "$DYLIB" ] || [ ! -f "$DYLIB" ]; then
@@ -82,25 +82,47 @@ jobs:
           fi
           STRINGS=$(strings -a "$DYLIB")
           for NEEDLE in \
-            'PowerlogProbe 1.2.0 PLAN C3 START' \
-            'MODE_C3_STRICT' \
-            'MODE_SQL_ONLY' \
-            'MODE_WIDE' \
-            'MODE_BLACKLIST' \
-            'MODE_ORIGINAL' \
+            'PowerlogProbe 1.3.0 RELEASE' \
             'PASSTHROUGH_ALL' \
-            'planC3.log' \
-            'PLAccountingOperator_' \
-            'PLApplicationAgent_' \
+            'DISABLED' \
             'PLPowerAssertionAgent_' \
+            'PLCoalitionAgent_' \
+            'PLIOReportAgent_' \
+            'PLSpringBoardAgent_' \
+            'writeEntry:' \
             'writeArrayEntries:' \
-            'writeEntries:withCompletionBlock:'; do
+            'entryKey' \
+            'UTF8String'; do
             if ! echo "$STRINGS" | grep -qF "$NEEDLE"; then
-              echo "::error::plan C3 string missing from dylib: $NEEDLE"
+              echo "::error::RELEASE string missing from dylib: $NEEDLE"
               exit 1
             fi
           done
-          echo "OK: plan C3 build tag + all mode flags + both SQL hooks present"
+          echo "OK: RELEASE tag + deny list + both SQL hooks + kill switch present"
+
+          # A RELEASE build must carry NO instrumentation at all. These strings
+          # come from v1.0.0/v1.1.0/v1.2.0 diagnostic builds; their presence
+          # would mean the log file / debug modes were not actually stripped.
+          for FORBIDDEN in \
+            'planC3.log' \
+            'planB.log' \
+            'planA.log' \
+            'probe.log' \
+            'STAT cs=' \
+            'KEY PASS' \
+            'KEY BLOCK' \
+            'MODE_C3_STRICT' \
+            'MODE_ORIGINAL' \
+            'MODE_SQL_ONLY' \
+            'MODE_WIDE' \
+            'PLCoreStorage' \
+            'setWriteToDB:'; do
+            if echo "$STRINGS" | grep -qF "$FORBIDDEN"; then
+              echo "::error::RELEASE still carries diagnostic/dead code: $FORBIDDEN"
+              exit 1
+            fi
+          done
+          echo "OK: zero logging, no debug modes, PLCoreStorage untouched"
 
       - name: Upload deb
         uses: actions/upload-artifact@v4

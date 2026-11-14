@@ -1,8 +1,8 @@
 Package: com.huhansibuxin.powerlogprobe
 Name: PowerlogProbe
-Version: 1.2.0
+Version: 1.3.0
 Architecture: iphoneos-arm64
-Description: PLAN C3 - standalone blacklist build for com.apple.aggregated. Ships in C3 mode with NO flag file needed: drops only pure diagnostic telemetry, allows every hardware/state Agent so per-App battery percentages stay accurate, and hooks only PLSQLiteConnection (PLCoreStorage rowids/completions/qualification/aggregates stay stock). Optional flags: MODE_C3_STRICT (PLAN B 33-prefix list), MODE_SQL_ONLY, MODE_WIDE, MODE_ORIGINAL, MODE_BLACKLIST, PASSTHROUGH_ALL/DISABLED. Logs to planC3.log.
+Description: RELEASE build for com.apple.aggregated. Drops only pure diagnostic telemetry (25 prefixes) before the final SQLite INSERT; everything else, including Settings > Battery per-App energy percentages, stays stock. Hooks only PLSQLiteConnection writeEntry:/writeArrayEntries:, so PLCoreStorage rowids, completions, qualification and hourly aggregates are untouched. No log file, no timers, no polling, no Foundation link. Emergency kill switch: empty file PASSTHROUGH_ALL or DISABLED in /var/mobile/Documents/PowerlogProbe/ then kickstart -k system/com.apple.aggregated.
 Maintainer: huhansibuxin
 Author: huhansibuxin
 Section: Tweaks
