@@ -1,8 +1,8 @@
 Package: com.huhansibuxin.powerlogprobe
 Name: PowerlogProbe
-Version: 1.0.0
+Version: 1.1.0
 Architecture: iphoneos-arm64
-Description: PLAN A - aggregated/PowerlogCore write filter. Whitelists only the entryKeys needed by Settings > Battery per-App usage (energy ledger, application runtime, battery curve) and short-circuits every other write at PLCoreStorage / PLSQLiteConnection. Includes a PASSTHROUGH_ALL flag-file A-B switch and event-count logging.
+Description: PLAN B - multi-mode aggregated/PowerlogCore write filter to keep Settings > Battery per-App energy percentages while suppressing CPU spikes. Flag-file modes: SQL_ONLY (default, filters only at PLSQLiteConnection so PLCoreStorage rowids/completions/qualification stay intact), WIDE, BLACKLIST, ORIGINAL (PLAN A replay). PASSTHROUGH_ALL emergency switch + planB.log event-count logging.
 Maintainer: huhansibuxin
 Author: huhansibuxin
 Section: Tweaks
