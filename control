@@ -1,8 +1,8 @@
 Package: com.huhansibuxin.powerlogprobe
 Name: PowerlogProbe
-Version: 1.1.0
+Version: 1.2.0
 Architecture: iphoneos-arm64
-Description: PLAN B - multi-mode aggregated/PowerlogCore write filter to keep Settings > Battery per-App energy percentages while suppressing CPU spikes. Flag-file modes: SQL_ONLY (default, filters only at PLSQLiteConnection so PLCoreStorage rowids/completions/qualification stay intact), WIDE, BLACKLIST, ORIGINAL (PLAN A replay). PASSTHROUGH_ALL emergency switch + planB.log event-count logging.
+Description: PLAN C3 - standalone blacklist build for com.apple.aggregated. Ships in C3 mode with NO flag file needed: drops only pure diagnostic telemetry, allows every hardware/state Agent so per-App battery percentages stay accurate, and hooks only PLSQLiteConnection (PLCoreStorage rowids/completions/qualification/aggregates stay stock). Optional flags: MODE_C3_STRICT (PLAN B 33-prefix list), MODE_SQL_ONLY, MODE_WIDE, MODE_ORIGINAL, MODE_BLACKLIST, PASSTHROUGH_ALL/DISABLED. Logs to planC3.log.
 Maintainer: huhansibuxin
 Author: huhansibuxin
 Section: Tweaks

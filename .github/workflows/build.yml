@@ -71,9 +71,9 @@ jobs:
             echo "::error::PowerlogProbe.dylib links substrate/ellekit/UIKit"
             exit 1
           fi
-          echo "OK: dependency hygiene (no sqlite3 needed in plan B)"
+          echo "OK: dependency hygiene (no sqlite3 needed in plan C3)"
 
-      - name: Verify plan B modes are present
+      - name: Verify plan C3 build is present
         run: |
           DYLIB=$(find .theos -name 'PowerlogProbe.dylib' -type f -not -path '*.dSYM*' | head -1)
           if [ -z "$DYLIB" ] || [ ! -f "$DYLIB" ]; then
@@ -82,21 +82,25 @@ jobs:
           fi
           STRINGS=$(strings -a "$DYLIB")
           for NEEDLE in \
-            'PowerlogProbe 1.1.0 PLAN B START' \
+            'PowerlogProbe 1.2.0 PLAN C3 START' \
+            'MODE_C3_STRICT' \
+            'MODE_SQL_ONLY' \
             'MODE_WIDE' \
             'MODE_BLACKLIST' \
             'MODE_ORIGINAL' \
             'PASSTHROUGH_ALL' \
+            'planC3.log' \
             'PLAccountingOperator_' \
             'PLApplicationAgent_' \
+            'PLPowerAssertionAgent_' \
             'writeArrayEntries:' \
             'writeEntries:withCompletionBlock:'; do
             if ! echo "$STRINGS" | grep -qF "$NEEDLE"; then
-              echo "::error::plan B string missing from dylib: $NEEDLE"
+              echo "::error::plan C3 string missing from dylib: $NEEDLE"
               exit 1
             fi
           done
-          echo "OK: plan B four modes + both SQL hooks + A-B switch present"
+          echo "OK: plan C3 build tag + all mode flags + both SQL hooks present"
 
       - name: Upload deb
         uses: actions/upload-artifact@v4

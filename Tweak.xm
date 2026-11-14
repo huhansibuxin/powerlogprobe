@@ -1,41 +1,42 @@
-// PowerlogProbe v1.1.0 - PLAN B (multi-mode A/B/C test build)
+// PowerlogProbe v1.2.0 - PLAN C3 (standalone blacklist build)
 // =============================================================================
 // WHY THIS BUILD EXISTS
-//   v1.0.0 PLAN A killed CPU spikes but broke "Settings > Battery" per-App
-//   ENERGY percentages (app runtimes still showed). On-device DB comparison
-//   (2026-11-14 18:26) proved the energy ledger was NEVER blocked:
-//     EnergyEstimateEvents      1800 -> 2731 rows (still written, non-zero)
-//     Application                649 ->  491 rows (runtime chain OK)
-//     QualificationEvents        696 ->  157 rows (-77%  <== broken)
-//     Aggregate_QualificationEnergy 11 -> 0 rows (per-App energy gone)
-//   Root cause is HOW we short-circuited, not WHICH key was missing:
-//     -[PLCoreStorage writeEntry:] returns a rowid; returning 0 looks like a
-//     failed write to PLAccountingQualificationManager's in-memory state
-//     machine (addEnergyEstimate: / didQualifyEnergyEvent: / close...).
-//     -[PLEntry setWriteToDB:NO] dirties the entry object.
-//     Blocking every hardware Agent's EventForward_* removed the inputs that
-//     decide "which app owns which node right now".
+//   PLAN A (whitelist) and PLAN B (SQL_ONLY whitelist) both made
+//   "Settings > Battery" per-App ENERGY percentages inaccurate. On-device DB
+//   comparison (2026-11-14 18:26) and planB.log (19:10-20:35) proved why:
+//     - 97 of the 129 BLOCKed keys were hardware/state Agents (XPC 18,
+//       IOReport 13, Display 11, BT 7, Audio 6, BB 6, Wifi 6 ...). Those
+//       EventForward_* events are the inputs PLAccountingQualificationManager
+//       uses to decide WHICH APP owns WHICH energy node.
+//     - EnergyEstimateEvents (raw energy) was never blocked, but
+//       QualificationEvents fell 696 -> 157 rows/hour and
+//       Aggregate_QualificationEnergy went 11 -> 0 => total energy present,
+//       distribution ratio wrong => percentages look wrong.
+//   Also proven: the 99% CPU bursts are NOT the hourly aggregate rollup.
+//   They are a 3-second batch flush of raw energy rows (606 rows at
+//   16:55:19-16:55:22). The aggregate tables are written at the top of the
+//   hour with no CPU spike. Blocking the flush only makes the data worse.
 //
-// FOUR MODES, ONE INSTALL (flag file + kickstart -k to switch, no rebuild)
-//   (no flag)        MODE SQL_ONLY     [recommended, default]
-//                    Do NOT touch PLCoreStorage at all. Filter only at the
-//                    lowest layer: -[PLSQLiteConnection writeEntry:] and
-//                    -writeArrayEntries:. All rowids, completion blocks,
-//                    qualification state machine and hourly aggregates run
-//                    100% unmodified; only the final INSERT is skipped.
-//   MODE_WIDE        Three hooks like PLAN A, but the whitelist additionally
-//                    allows every low-frequency EventForward_/EventInterval_
-//                    key (the qualification inputs). High-frequency
-//                    EventBackward_/EventPoint_ telemetry stays blocked.
-//   MODE_BLACKLIST   Three hooks, inverse policy: block only explicitly listed
-//                    useless/high-volume tables, pass everything else.
-//   MODE_ORIGINAL    Bit-for-bit PLAN A behaviour (return 0 + setWriteToDB:NO
-//                    + narrow whitelist). A-B-A control to reproduce the bug.
-//   PASSTHROUGH_ALL / DISABLED : hooks installed but completely inert.
+// PLAN C3 POLICY (default, NO flag file needed)
+//   1. BLACKLIST, not whitelist: only explicitly useless/high-volume
+//      diagnostic tables are dropped. EVERYTHING else passes.
+//   2. Hardware/state Agents are ALLOWED. Only pure diagnostic telemetry is
+//      denied. This keeps the per-App energy attribution inputs intact.
+//   3. Hook ONLY the SQL layer (PLSQLiteConnection writeEntry: and
+//      writeArrayEntries:). PLCoreStorage is left completely untouched, so
+//      rowids, completion blocks, qualification state machine and hourly
+//      aggregates run 100% stock. Only the final INSERT is skipped.
+//   4. Short-circuited writes return a synthetic non-zero rowid
+//      (0x4000000000000000+) so callers still see "write succeeded".
+//      setWriteToDB: is NEVER called (that dirtied entries in PLAN A).
 //
-// ALL non-ORIGINAL modes return a synthetic non-zero rowid instead of 0, so
-// callers see "write succeeded" and keep their downstream logic intact.
-// The synthetic IDs start at 0x4000000000000000 - far above any real rowid.
+// OPTIONAL CONTROL FLAGS (empty files, read once in ctor, kickstart to apply)
+//   MODE_C3_STRICT     use PLAN B's original 33-prefix deny list (A-B control)
+//   MODE_SQL_ONLY      PLAN B default behaviour (whitelist at SQL layer)
+//   MODE_WIDE          PLAN B wide whitelist (CS + SQL hooks)
+//   MODE_ORIGINAL      bit-for-bit PLAN A replay
+//   MODE_BLACKLIST     explicit C3 (same as the default)
+//   PASSTHROUGH_ALL / DISABLED : hooks installed but completely inert
 //
 // HARD CONSTRAINTS
 //   - ZERO substrate/ellekit LINK dependency: no Logos hooking directives,
@@ -59,29 +60,32 @@
 #import <sys/stat.h>
 
 #define kDir      "/var/mobile/Documents/PowerlogProbe"
-#define kLogPath  "/var/mobile/Documents/PowerlogProbe/planB.log"
+#define kLogPath  "/var/mobile/Documents/PowerlogProbe/planC3.log"
 #define kFlagAll  "/var/mobile/Documents/PowerlogProbe/PASSTHROUGH_ALL"
 #define kFlagOff  "/var/mobile/Documents/PowerlogProbe/DISABLED"
 #define kFlagWide "/var/mobile/Documents/PowerlogProbe/MODE_WIDE"
 #define kFlagBlack "/var/mobile/Documents/PowerlogProbe/MODE_BLACKLIST"
 #define kFlagOrig "/var/mobile/Documents/PowerlogProbe/MODE_ORIGINAL"
+#define kFlagSql  "/var/mobile/Documents/PowerlogProbe/MODE_SQL_ONLY"
+#define kFlagStrict "/var/mobile/Documents/PowerlogProbe/MODE_C3_STRICT"
 
 // Build tag, kept alive for the CI strings assertion. Never read at runtime.
 static const char kBuildTag[] __attribute__((used)) =
-    "PowerlogProbe 1.1.0 PLAN B START multi-mode";
+    "PowerlogProbe 1.2.0 PLAN C3 START standalone blacklist";
 
 typedef enum {
-    MODE_SQL_ONLY  = 0,   // default, recommended
+    MODE_SQL_ONLY  = 0,
     MODE_WIDE      = 1,
-    MODE_BLACKLIST = 2,
+    MODE_BLACKLIST = 2,   // PLAN C3 default
     MODE_ORIGINAL  = 3    // v1.0.0 PLAN A replay
 } Mode;
 
-static Mode g_mode = MODE_SQL_ONLY;
+static Mode g_mode = MODE_BLACKLIST;
 static int  g_passthrough = 0;
+static int  g_strict = 0;   // 1 -> use PLAN B's original deny list
 
 // ---------------------------------------------------------------------------
-// PLAN A whitelist (unchanged): only what Settings > Battery needs.
+// PLAN A whitelist (kept for MODE_SQL_ONLY / MODE_WIDE / MODE_ORIGINAL)
 // ---------------------------------------------------------------------------
 static const char *kAllowPrefix[] = {
     "PLAccountingOperator_",
@@ -99,17 +103,47 @@ static const char *kAllowSub[] = {
     "Energy",
     "Battery",
 };
-
-// MODE_WIDE: qualification inputs. These are LOW volume in the 120s growth
-// snapshot (mostly 1-2 rows), so allowing them costs almost nothing.
 static const char *kWideExclude[] = {
-    "PLPowerAssertionAgent_EventForward_Assertion", // 67 rows/120s, keep blocked
+    "PLPowerAssertionAgent_EventForward_Assertion",
 };
 
-// MODE_BLACKLIST: only these are dropped. Everything else (including every
-// PLAccountingOperator_*, PLApplicationAgent_*, PLBatteryAgent_* and all
-// Aggregate tables) flows through untouched.
-static const char *kDenyPrefix[] = {
+// ---------------------------------------------------------------------------
+// PLAN C3 deny list (default): pure diagnostic / high-volume telemetry ONLY.
+// Deliberately ABSENT: PLWifiAgent_, PLBBAgent_, PLDisplayAgent_,
+// PLAudioAgent_, PLXPCAgent_, PLXPCService_, PLBluetoothAgent_,
+// PLNetworkAgent_, PLVideoAgent_ - these are the per-App energy attribution
+// inputs. Blocking them made the battery percentages inaccurate in PLAN A/B.
+// ---------------------------------------------------------------------------
+static const char *kDenyClean[] = {
+    "PLPowerAssertionAgent_",
+    "PLCoalitionAgent_",
+    "PLIOReportAgent_",
+    "PLPerformanceAgent_",
+    "PLCoreDuetAgent_",
+    "PLEduAgent_",
+    "PLSiriAgent_",
+    "PLIdentityServicesAgent_",
+    "PLPushAgent_",
+    "PLMDNSAgent_",
+    "PLButtonAgent_",
+    "PLProximityAgent_",
+    "PLSCDynamicStoreAgent_",
+    "PLConfigAgent_",
+    "PLLocaleAgent_",
+    "PLSMCAgent_",
+    "PLSpringBoardAgent_",
+    "PLRenderingAgent_",
+    "PLProcessMonitorAgent_EventPoint_",
+    "PLProcessMonitorAgent_EventBackward_",
+    "PPT",
+    "ConfigMetrics_",
+    "LocaleMetrics_",
+    "WifiMetrics_",
+    "DisplayMetrics_",
+};
+
+// PLAN B's original 33-prefix list, used only with MODE_C3_STRICT (A-B control)
+static const char *kDenyFull[] = {
     "PLIOReportAgent_",
     "PLCoalitionAgent_",
     "PLXPCAgent_",
@@ -263,15 +297,17 @@ static int whitelisted_wide(const char *k) {
     if (whitelisted_orig(k)) return 1;
     for (size_t i = 0; i < sizeof(kWideExclude) / sizeof(kWideExclude[0]); i++)
         if (strncmp(k, kWideExclude[i], strlen(kWideExclude[i])) == 0) return 0;
-    // Qualification inputs: low-volume forward/interval agent events.
     if (strstr(k, "_EventForward_") || strstr(k, "_EventInterval_")) return 1;
     return 0;
 }
 
 static int blacklist_hit(const char *k) {
     if (!k || !*k) return 0;
-    for (size_t i = 0; i < sizeof(kDenyPrefix) / sizeof(kDenyPrefix[0]); i++)
-        if (strncmp(k, kDenyPrefix[i], strlen(kDenyPrefix[i])) == 0) return 1;
+    const char * const *list = g_strict ? kDenyFull : kDenyClean;
+    size_t n = g_strict ? (sizeof(kDenyFull) / sizeof(kDenyFull[0]))
+                        : (sizeof(kDenyClean) / sizeof(kDenyClean[0]));
+    for (size_t i = 0; i < n; i++)
+        if (strncmp(k, list[i], strlen(list[i])) == 0) return 1;
     return 0;
 }
 
@@ -312,6 +348,7 @@ static long long short_circuit_value(id entry) {
 
 // ---------------------------------------------------------------------------
 // Hook 1: -[PLCoreStorage writeEntry:]  (q24@0:8@16)
+// WIDE / ORIGINAL only. PLAN C3 never installs this.
 // ---------------------------------------------------------------------------
 static orig_single_fn g_origCS = NULL;
 static long long hook_cs_writeEntry(id self, SEL _cmd, id entry) {
@@ -322,7 +359,6 @@ static long long hook_cs_writeEntry(id self, SEL _cmd, id entry) {
 
 // ---------------------------------------------------------------------------
 // Hook 2: -[PLCoreStorage writeEntries:withCompletionBlock:] (v32@0:8@16@?24)
-// Always call the original (filtered) so completion blocks still fire.
 // ---------------------------------------------------------------------------
 static orig_batch_fn g_origBatch = NULL;
 static void hook_cs_writeEntries(id self, SEL _cmd, id entries, id block) {
@@ -348,7 +384,7 @@ static void hook_cs_writeEntries(id self, SEL _cmd, id entries, id block) {
 
 // ---------------------------------------------------------------------------
 // Hook 3: -[PLSQLiteConnection writeEntry:]  (q24@0:8@16)
-// In MODE_SQL_ONLY this is the ONLY filter point.
+// PLAN C3 / SQL_ONLY: the ONLY single-entry filter point.
 // ---------------------------------------------------------------------------
 static orig_single_fn g_origSQL = NULL;
 static long long hook_sql_writeEntry(id self, SEL _cmd, id entry) {
@@ -359,7 +395,6 @@ static long long hook_sql_writeEntry(id self, SEL _cmd, id entry) {
 
 // ---------------------------------------------------------------------------
 // Hook 4: -[PLSQLiteConnection writeArrayEntries:]  (v24@0:8@16)
-// Batch INSERT path; filter array, keep calling the original.
 // ---------------------------------------------------------------------------
 static orig_void_id_fn g_origSQLArray = NULL;
 static void hook_sql_writeArrayEntries(id self, SEL _cmd, id entries) {
@@ -405,20 +440,21 @@ static void install(void) {
     Class cs  = objc_getClass("PLCoreStorage");
     Class sql = objc_getClass("PLSQLiteConnection");
 
-    const char *modeName = "SQL_ONLY";
+    const char *modeName = "BLACKLIST(C3)";
     switch (g_mode) {
+        case MODE_SQL_ONLY:  modeName = "SQL_ONLY"; break;
         case MODE_WIDE:      modeName = "WIDE"; break;
-        case MODE_BLACKLIST: modeName = "BLACKLIST"; break;
         case MODE_ORIGINAL:  modeName = "ORIGINAL(PLAN A replay)"; break;
         default: break;
     }
-    plog("=== PowerlogProbe 1.1.0 PLAN B START pid=%d mode=%s passthrough=%d ===",
-         getpid(), modeName, g_passthrough);
+    plog("=== PowerlogProbe 1.2.0 PLAN C3 START pid=%d mode=%s list=%s layer=%s passthrough=%d ===",
+         getpid(), modeName, g_strict ? "STRICT(PLAN B 33)" : "CLEAN",
+         (g_mode == MODE_SQL_ONLY || g_mode == MODE_BLACKLIST) ? "SQL_ONLY" : "CS+SQL",
+         g_passthrough);
 
-    if (g_mode == MODE_SQL_ONLY) {
-        // Deliberately leave PLCoreStorage untouched: rowids, completion
-        // blocks, qualification state machine and hourly aggregates all run
-        // exactly as stock. Only the final SQL INSERT is skipped.
+    if (g_mode == MODE_SQL_ONLY || g_mode == MODE_BLACKLIST) {
+        // PLAN C3: leave PLCoreStorage untouched so rowids, completion blocks,
+        // the qualification state machine and hourly aggregates all run stock.
         g_origSQL = (orig_single_fn)install_method(sql, "writeEntry:",
                         (IMP)hook_sql_writeEntry, "q24@0:8@16");
         g_origSQLArray = (orig_void_id_fn)install_method(sql, "writeArrayEntries:",
@@ -441,7 +477,7 @@ static void install(void) {
         plog("HOOK SQL writeEntry: orig=%p %s", (void *)(uintptr_t)g_origSQL,
              g_origSQL ? "OK" : "FAILED");
     }
-    plog("=== PLAN B READY mode=%s ===", modeName);
+    plog("=== PLAN C3 READY mode=%s list=%s ===", modeName, g_strict ? "STRICT" : "CLEAN");
 }
 
 %ctor {
@@ -451,9 +487,12 @@ static void install(void) {
         // Fail-open: never run an unobservable experiment on a system daemon.
         g_passthrough = 1;
     }
+    // Default is PLAN C3 (BLACKLIST + CLEAN list + SQL-only layer).
+    if (access(kFlagSql, F_OK) == 0)     g_mode = MODE_SQL_ONLY;
+    if (access(kFlagWide, F_OK) == 0)    g_mode = MODE_WIDE;
+    if (access(kFlagBlack, F_OK) == 0)   g_mode = MODE_BLACKLIST;
+    if (access(kFlagOrig, F_OK) == 0)    g_mode = MODE_ORIGINAL;
+    if (access(kFlagStrict, F_OK) == 0)  g_strict = 1;
     if (access(kFlagAll, F_OK) == 0 || access(kFlagOff, F_OK) == 0) g_passthrough = 1;
-    if (access(kFlagWide, F_OK) == 0)  g_mode = MODE_WIDE;
-    if (access(kFlagBlack, F_OK) == 0) g_mode = MODE_BLACKLIST;
-    if (access(kFlagOrig, F_OK) == 0)  g_mode = MODE_ORIGINAL;
     install();
 }

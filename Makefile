@@ -15,7 +15,7 @@ PowerlogProbe_FILES = Tweak.xm
 # cannot dlopen libellekit, any LC_LOAD_DYLIB referencing it makes our dylib
 # fail to load silently (proven on keybagd, 2026-09-28). We only use %ctor plus
 # objc/runtime class_replaceMethod, never %hook / MSHookFunction, so
-# dead-stripping is safe. Plan B never opens the database itself - it filters
+# dead-stripping is safe. Plan C3 never opens the database itself - it filters
 # entries before SQL is issued, so no libsqlite3 link is needed.
 PowerlogProbe_LDFLAGS = -Wl,-dead_strip_dylibs
 PowerlogProbe_CFLAGS = -Os
